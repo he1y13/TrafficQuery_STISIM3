@@ -42,13 +42,14 @@ Type SurrVehicle
     Acceleration As Single    ' vehicle acceleration in ft/s/s
     SixDOF As SixDOFPosition  'Six degree of freedom UDT used to define the vehicle’s inertial orientation and position. The definition  is found in chapter 3, Table 3.10.
     Speed As Single           'Current longitudinal or forward velocity of the vehicle, in feet/second.
-    Xpos As Single            '.SixDOF.x
-    yPos As Single            '.SixDOF.y
+    Xpos As Single            '.EDist(i)
+    ypos As Single            '.SixDOF.y
     range As Double           'Current range between this vehicle and the driver’s vehicle, in feet. This value takes into account both longitudinal and lateral positions.
-    currentlane As Integer    'Current lane the vehicle is in, as calculated in the function "getCurrLane"
+    currentLane As Integer    'Current lane the vehicle is in, as calculated in the function "getCurrLane"
     direction As Integer      'the current vehicle heading: 1:Driver’s direction 2:Right to left across driver path 3:Opposing driver direction4:Left to right across driver path
     Length As Single          'Length of the vehicle, in feet.
     updated As Boolean        'Whether data has been written to the UDT
+    LatPos As Single          'Lateral position with respect to the roadway.
 End Type
 
 'instantiation of 'vehicles'
@@ -190,7 +191,7 @@ End Function
 'A subroutine to update the UDT's containing vehicle information,
 'should be called once every simulation loop, or when traffic needs to be queried in the Update function of the OM module.
 'takes the same arguments as the Update function of STISIM plus a maxrange variable limiting the look-ahead distance (in ft)
-Sub QueryTraffic(hostV As DYNAMICSParams, dv As OMDynamicVariables, NumEvents As Integer, EDes() As Integer, EIndex() As Integer, Events As SimEvents, maxrange As Integer)
+Sub QueryTraffic(hostV As DYNAMICSParams, dv As OMDynamicVariables, NumEvents As Integer, EDes() As Integer, EDist() As Single, EIndex() As Integer, Events As SimEvents, maxrange As Integer)
     Dim i As Integer
     Call setMaxrange(maxrange)
     Call reset_vehicles
@@ -199,75 +200,76 @@ Sub QueryTraffic(hostV As DYNAMICSParams, dv As OMDynamicVariables, NumEvents As
             Case EVENTDEFVEHICLE
                 With Events.Vehicles(EIndex(i))
                     'write data to the container
-                    container.yPos = .SixDOF.y
-                    container.Xpos = .SixDOF.x
+                    container.ypos = .SixDOF.y
+                    container.Xpos = EDist(i)
+                    container.LatPos = .LatPos
                     container.Speed = .Speed
                     container.SixDOF = .SixDOF
                     container.Acceleration = .Acceleration
-                    container.range = .range
-                    container.currentlane = getCurrLane(.SixDOF.y, dv)
+                    container.range = EDist(i)
+                    container.currentLane = getCurrLane(CSng(.LatPos), dv)
                     container.direction = .direction
                     container.Length = .VehicleLength
                     container.updated = False
                     'if vehicles are in the same lane
-                    If getCurrLane(.SixDOF.y, dv) = getCurrLane(hostV.y, dv) Then
+                    If getCurrLane(CSng(.LatPos), dv) = getCurrLane(CDbl(hostV.YLanePos), dv) Then
                         'if it is in front of the host vehicle
-                        If (.SixDOF.x - hostV.x) > 1 Then
-                            If (.SixDOF.x - hostV.x) < closestinlane Then
-                                closestinlane = .SixDOF.x - hostV.x
+                        If (EDist(i)) > 1 Then
+                            If (EDist(i)) < closestinlane Then
+                                closestinlane = EDist(i)
                                 VAhead = container
                                 VAhead.updated = True
                             Else
-                                If (.SixDOF.x - hostV.x) < secondclosestinlane Then
-                                    secondclosestinlane = .SixDOF.x - hostV.x
+                                If (EDist(i)) < secondclosestinlane Then
+                                    secondclosestinlane = EDist(i)
                                     VNextAhead = container
                                     VNextAhead.updated = True
                                 End If
                             End If
                         'if it is behind
-                        ElseIf (.SixDOF.x - hostV.x) < -1 And Abs(.SixDOF.x - hostV.x) < closestbehindinlane Then
-                            closestbehindinlane = Abs(.SixDOF.x - hostV.x)
+                        ElseIf (EDist(i)) < -1 And (EDist(i)) > closestbehindinlane Then
+                            closestbehindinlane = (EDist(i))
                             VBehind = container
                             VBehind.updated = True
                         End If
                     'if it is to the right
-                    ElseIf (getCurrLane(.SixDOF.y, dv) - 1) = getCurrLane(hostV.y, dv) Then
+                    ElseIf (getCurrLane(CSng(.LatPos), dv) - 1) = getCurrLane(CDbl(hostV.YLanePos), dv) Then
                         'if it is in front of the host vehicle
-                        If (.SixDOF.x - hostV.x) > 1 Then
-                            If (.SixDOF.x - hostV.x) < closestfrontright Then
-                                closestfrontright = .SixDOF.x - hostV.x
+                        If (EDist(i)) > 1 Then
+                            If (EDist(i)) < closestfrontright Then
+                                closestfrontright = EDist(i)
                                 VAheadRight = container
                                 VAheadRight.updated = True
                             Else
-                                If (.SixDOF.x - hostV.x) < secondclosestfrontright Then
-                                    secondclosestfrontright = .SixDOF.x - hostV.x
+                                If (EDist(i)) < secondclosestfrontright Then
+                                    secondclosestfrontright = EDist(i)
                                     VNextAheadRight = container
                                     VNextAheadRight.updated = True
                                 End If
                             End If
                             'if it is behind
-                            ElseIf (.SixDOF.x - hostV.x) < -1 And Abs(.SixDOF.x - hostV.x) < closestbackright Then
-                                closestbackright = Abs(.SixDOF.x - hostV.x)
+                            ElseIf (EDist(i)) < -1 And (EDist(i)) > closestbackright Then
+                                closestbackright = (EDist(i))
                                 VBehindRight = container
                                 VBehindRight.updated = True
                             End If
                     'if it is to the left
-                    ElseIf (getCurrLane(.SixDOF.y, dv) + 1) = getCurrLane(hostV.y, dv) Then
-                            If (.SixDOF.x - hostV.x) > 1 Then
-                                If (.SixDOF.x - hostV.x) < closestfrontleft Then
-                                    closestfrontleft = .SixDOF.x - hostV.x
+                    ElseIf (getCurrLane(CSng(.LatPos), dv) + 1) = getCurrLane(CDbl(hostV.YLanePos), dv) Then
+                            If (EDist(i)) > 1 Then
+                                If (EDist(i)) < closestfrontleft Then
+                                    closestfrontleft = EDist(i)
                                     VAheadLeft = container
                                     VAheadLeft.updated = True
                             Else
-                                If (.SixDOF.x - hostV.x) < secondclosestfrontleft Then
+                                If (EDist(i)) < secondclosestfrontleft Then
                                     secondclosestfrontleft = .SixDOF.x - hostV.x
                                     VNextAheadLeft = container
                                     VNextAheadLeft.updated = True
                                 End If
                             End If
                             'if it is behind
-                            ElseIf (.SixDOF.x - hostV.x) < -1 And Abs(.SixDOF.x - hostV.x) < closestbackleft Then
-                                closestbackleft = Abs(.SixDOF.x - hostV.x)
+                            ElseIf (EDist(i)) < -1 And (EDist(i)) > closestbackleft Then
+                                closestbackleft = EDist(i)
                                 VBehindLeft = container
                                 VBehindLeft.updated = True
                             End If
@@ -282,13 +284,13 @@ End Sub
 Private Sub setMaxrange(maxrange As Integer)
     closestinlane = maxrange
     secondclosestinlane = maxrange
-    closestbehindinlane = maxrange
+    closestbehindinlane = maxrange * -1
     closestfrontright = maxrange
     closestfrontleft = maxrange
     secondclosestfrontright = maxrange
     secondclosestfrontleft = maxrange
-    closestbackright = maxrange
-    closestbackleft = maxrange
+    closestbackright = maxrange * -1
+    closestbackleft = maxrange * -1
 End Sub
 'a setter subroutine for the vehicle UDT's
 'resets all the UDT's to default, non-valid values
@@ -306,19 +308,19 @@ End Sub
 'a setter subroutine for individual vehilce UDT's
 'takes a SurrVehicle UDT by reference and resets it.
 Private Sub resetStruct(ByRef vehicle As SurrVehicle)
-    vehicle.yPos = -999
+    vehicle.ypos = -999
     vehicle.Xpos = -999
     vehicle.Speed = -999
     vehicle.Acceleration = -999
     vehicle.range = -999
-    vehicle.currentlane = -999
+    vehicle.currentLane = -999
     vehicle.direction = -999
     vehicle.Length = -999
     vehicle.updated = False
 End Sub
 'A function to calculate the number of lanes on the left side of the road
 Private Function noOfLanes(dv As OMDynamicVariables) As Integer
-        noOfLanes = Floor(dv.RoadWidthL / dv.LaneWidth)
+        noOfLanes = Floor((dv.RoadWidthL + dv.RoadWidthR) / dv.LaneWidth)
 End Function
 'An implementation of the math.floor function
 Private Function Floor(x As Variant) As Long
@@ -330,17 +332,19 @@ Private Function Floor(x As Variant) As Long
 End Function
 
 'Determine car's current lane given its position on the road, lane and road widths
-Private Function getCurrLane(yPos As Double, dv As OMDynamicVariables) As Integer
+
+
+Public Function getCurrLane(ypos As Double, dv As OMDynamicVariables) As Integer
     'Initialise y and define it as the lateral coordinate with the road's left border as the zero point
     Dim y As Single
-    y = yPos + dv.RoadWidthL
+    y = ypos + dv.RoadWidthL
     'Driving on the left side of the road, return 1 for the leftmost lane and increase the number of the lane moving to the right
     If y < noOfLanes(dv) * dv.LaneWidth And y > 0 Then
         getCurrLane = 1 + Floor(y / dv.LaneWidth)
     'Driving on the right (opposite) side of the road use -1 for the leftmost lane and go more negative, as the car drives further
     'from the road's centreline
-    ElseIf yPos > 0 And yPos < dv.RoadWidthR Then
-        getCurrLane = -1 - Floor(yPos / dv.LaneWidth)
+    ElseIf ypos > 0 And ypos < dv.RoadWidthR Then
+        getCurrLane = -1 - Floor(ypos / dv.LaneWidth)
     'If the car is on the road, where there is only one lane on the left, set its current lane as 1
     ElseIf dv.LaneWidth = dv.RoadWidthL And y > 0 And y < (dv.RoadWidthR + dv.RoadWidthL) Then
         getCurrLane = 1
